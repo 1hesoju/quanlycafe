@@ -356,11 +356,16 @@ std::vector<std::string> QuanLyQuanCafe::layNhatKyGanDay() const {
     return ket;
 }
 
+QuanLyOrder& QuanLyQuanCafe::layQuanLyOrder() {
+    return qlOrder;
+}
+
 void QuanLyQuanCafe::luuTatCa(const std::string& thuMuc) {
     FileManager::luuNhanVien(danhSachNV, thuMuc + "/nhanvien.csv");
     lich.luuFile(thuMuc + "/lichlamviec.csv");
     chamCong.luuFile(thuMuc + "/chamcong.csv");
     bangLuong.luuFile(thuMuc + "/luong.csv");
+    qlOrder.luuTatCa(thuMuc);
 }
 
 void QuanLyQuanCafe::taiTatCa(const std::string& thuMuc) {
@@ -369,5 +374,6 @@ void QuanLyQuanCafe::taiTatCa(const std::string& thuMuc) {
     lich.taiFile(thuMuc + "/lichlamviec.csv");
     chamCong.taiFile(thuMuc + "/chamcong.csv");
     bangLuong.taiFile(thuMuc + "/luong.csv");
+    qlOrder.taiTatCa(thuMuc);
     ghiNhatKy("Da tai du lieu tu " + thuMuc);
 }

@@ -26,6 +26,9 @@ set(BACKEND_SOURCES
     src/QuanLyQuanCafe.cpp
     src/TaiKhoan.cpp
     src/ThuNgan.cpp
+    src/MonAn.cpp
+    src/BanAn.cpp
+    src/QuanLyOrder.cpp
 )
 
 set(GUI_SOURCES

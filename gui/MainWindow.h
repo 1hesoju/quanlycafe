@@ -7,6 +7,7 @@
 #include <QComboBox>
 #include <QDateEdit>
 #include <QPushButton>
+#include <QTimer>
 #include "QuanLyQuanCafe.h"
 #include "TaiKhoan.h"
 
@@ -76,6 +77,26 @@ private:
     QLabel* lblEmpThucLinh;
     QDateEdit* dateEmpThangLuong;
 
+    // --- Tab Order & Ban (iPOS) ---
+    QPushButton* btnDanhSachBan[30];
+    int banDangChon;
+    QLabel* lblThongTinBan;
+    QTableWidget* tableChiTietOrder;
+    QLabel* lblTongTienOrder;
+    QLabel* lblTongSoMonOrder;
+
+    // --- Tab Pha Che (KDS) ---
+    QTableWidget* tableKDS;
+    QLabel* lblKDSStats;
+
+    // --- Tab Phuc Vu (Can Bung) ---
+    QTableWidget* tableCanBung;
+    QLabel* lblCanBungStats;
+
+    // --- Timer dong bo Order ---
+    QTimer* timerSyncOrder;
+
+
 public:
     MainWindow(QuanLyQuanCafe& cafeApp, QuanLyTaiKhoan& tkManager,
                const std::string& dataDir, QWidget* parent = nullptr);
@@ -97,6 +118,16 @@ private:
     void refreshEmployeeLich();
     void refreshEmployeeChamCong();
     void refreshEmployeeLuong();
+
+    QWidget* createOrderWidget();
+    QWidget* createKDSWidget();
+    QWidget* createCanBungWidget();
+
+    void refreshSoDoBan();
+    void refreshChiTietBan(int soBan);
+    void refreshKDS();
+    void refreshCanBung();
+
 
 private slots:
     // Admin slots
@@ -130,6 +161,21 @@ private slots:
     void onEmpChamCongVao();
     void onEmpChamCongRa();
     void onEmpThangLuongChanged();
+
+    // Order & KDS slots
+    void onChonBan(int soBan);
+    void onThemMonVaoBan(const QString& maMon);
+    void onSuaSoLuongMon(int delta);
+    void onXoaMonKhoiBan();
+    void onChotOrder();
+    void onThanhToanBan();
+    void onHuyBan();
+
+    void onKDSXacNhan(int soBan, const QString& maMon);
+    void onKDSHoanThanh(int soBan, const QString& maMon);
+
+    void onPhuVuDaBung(int soBan, const QString& maMon);
+    void onTimerSyncOrder();
 
     // Hệ thống
     void onLuuDuLieu();

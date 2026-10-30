@@ -10,6 +10,7 @@
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QMessageBox>
+#include <QScrollArea>
 #include <QInputDialog>
 #include <QFileDialog>
 #include <QStatusBar>
@@ -35,8 +36,24 @@ MainWindow::MainWindow(QuanLyQuanCafe& cafeApp, QuanLyTaiKhoan& tkManager,
                        const std::string& dataDir, QWidget* parent)
     : QMainWindow(parent), app(cafeApp), qlTK(tkManager), thuMucDuLieu(dataDir) {
     setWindowTitle("Phan Mem Quan Ly Nhan Vien Quan Cafe (Qt6)");
-    resize(1050, 680);
+    resize(1150, 720);
+
+    banDangChon = 1;
+    lblThongTinBan = nullptr;
+    tableChiTietOrder = nullptr;
+    lblTongTienOrder = nullptr;
+    lblTongSoMonOrder = nullptr;
+    tableKDS = nullptr;
+    lblKDSStats = nullptr;
+    tableCanBung = nullptr;
+    lblCanBungStats = nullptr;
+    for (int i = 0; i < 30; ++i) btnDanhSachBan[i] = nullptr;
+
     initUI();
+
+    timerSyncOrder = new QTimer(this);
+    connect(timerSyncOrder, &QTimer::timeout, this, &MainWindow::onTimerSyncOrder);
+    timerSyncOrder->start(2000);
 }
 
 void MainWindow::initUI() {
@@ -388,6 +405,10 @@ void MainWindow::buildAdminTabs() {
     connect(btnResetPW, &QPushButton::clicked, this, &MainWindow::onResetMatKhau);
     connect(btnXoaTK, &QPushButton::clicked, this, &MainWindow::onXoaTaiKhoan);
 
+    // Tab Order Mon va Quay Pha Che cho Admin
+    tabWidget->addTab(createOrderWidget(), "Order Mon (iPOS)");
+    tabWidget->addTab(createKDSWidget(), "Quay Pha Che (KDS)");
+
     // Nạp dữ liệu ban đầu
     refreshDashboard();
     refreshTableNhanVien();
@@ -539,6 +560,20 @@ void MainWindow::buildEmployeeTabs() {
     connect(btnCheckIn, &QPushButton::clicked, this, &MainWindow::onEmpChamCongVao);
     connect(btnCheckOut, &QPushButton::clicked, this, &MainWindow::onEmpChamCongRa);
     connect(dateEmpThangLuong, &QDateEdit::dateChanged, this, &MainWindow::onEmpThangLuongChanged);
+
+    // Them cac tab nghiep vu phu hop voi tung vi tri
+    std::string role = nv ? nv->loaiNhanVien() : "";
+    if (role == "PHU_VU") {
+        tabWidget->addTab(createOrderWidget(), "Ban & Order (iPOS)");
+        tabWidget->addTab(createCanBungWidget(), "Mon Can Bung (Phuc Vu)");
+    } else if (role == "THU_NGAN") {
+        tabWidget->addTab(createOrderWidget(), "Ban & Order (iPOS)");
+    } else if (role == "PHA_CHE") {
+        tabWidget->addTab(createKDSWidget(), "Quay Pha Che (KDS)");
+    } else if (role == "QUAN_LY") {
+        tabWidget->addTab(createOrderWidget(), "Ban & Order (iPOS)");
+        tabWidget->addTab(createKDSWidget(), "Quay Pha Che (KDS)");
+    }
 
     refreshEmployeeInfo();
     refreshEmployeeLich();
@@ -1283,4 +1318,623 @@ void MainWindow::onDangXuat() {
     onLuuDuLieu();
     qlTK.dangXuat();
     close(); // Đóng MainWindow để main_gui mở lại LoginDialog
+}
+
+// =========================================================================
+// GIAO DIEN ORDER & BAN (iPOS STYLE)
+// =========================================================================
+QWidget* MainWindow::createOrderWidget() {
+    QWidget* tabOrder = new QWidget();
+    QHBoxLayout* mainLayout = new QHBoxLayout(tabOrder);
+    mainLayout->setSpacing(12);
+
+    // ----------------- CỘT 1: SƠ ĐỒ 30 BÀN -----------------
+    QGroupBox* boxBan = new QGroupBox("So Do Ban (30 Ban)");
+    boxBan->setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; }");
+    QVBoxLayout* vbBan = new QVBoxLayout(boxBan);
+
+    // Chú thích màu sắc
+    QHBoxLayout* hbChuThich = new QHBoxLayout();
+    QLabel* lblColorBlue = new QLabel("■ Da co mon (Xanh)");
+    lblColorBlue->setStyleSheet("color: #0288D1; font-weight: bold; font-size: 11px;");
+    QLabel* lblColorGray = new QLabel("■ Ban trong (Xam)");
+    lblColorGray->setStyleSheet("color: #757575; font-weight: bold; font-size: 11px;");
+    hbChuThich->addWidget(lblColorBlue);
+    hbChuThich->addWidget(lblColorGray);
+    vbBan->addLayout(hbChuThich);
+
+    QScrollArea* scrollBan = new QScrollArea();
+    scrollBan->setWidgetResizable(true);
+    QWidget* widgetBanGrid = new QWidget();
+    QGridLayout* gridBan = new QGridLayout(widgetBanGrid);
+    gridBan->setSpacing(8);
+
+    for (int i = 0; i < 30; ++i) {
+        int soBan = i + 1;
+        QPushButton* btn = new QPushButton();
+        btn->setFixedSize(78, 62);
+        btnDanhSachBan[i] = btn;
+
+        connect(btn, &QPushButton::clicked, this, [this, soBan]() {
+            onChonBan(soBan);
+        });
+
+        int row = i / 5;
+        int col = i % 5;
+        gridBan->addWidget(btn, row, col);
+    }
+
+    scrollBan->setWidget(widgetBanGrid);
+    vbBan->addWidget(scrollBan);
+    mainLayout->addWidget(boxBan, 4);
+
+    // ----------------- CỘT 2: CHI TIẾT ORDER & HÓA ĐƠN -----------------
+    QGroupBox* boxChiTiet = new QGroupBox("Chi Tiet Order");
+    boxChiTiet->setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; }");
+    QVBoxLayout* vbChiTiet = new QVBoxLayout(boxChiTiet);
+
+    lblThongTinBan = new QLabel("Dang chon: BAN 1 (TRONG)");
+    lblThongTinBan->setStyleSheet("font-size: 14px; font-weight: bold; color: #1565C0; margin-bottom: 4px;");
+    vbChiTiet->addWidget(lblThongTinBan);
+
+    tableChiTietOrder = new QTableWidget();
+    tableChiTietOrder->setColumnCount(6);
+    tableChiTietOrder->setHorizontalHeaderLabels({"STT", "Ten Mon", "Don Gia", "SL", "Thanh Tien", "Trang Thai"});
+    tableChiTietOrder->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    tableChiTietOrder->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    tableChiTietOrder->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    tableChiTietOrder->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    tableChiTietOrder->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+    tableChiTietOrder->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
+    tableChiTietOrder->setSelectionBehavior(QAbstractItemView::SelectRows);
+    tableChiTietOrder->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    vbChiTiet->addWidget(tableChiTietOrder);
+
+    // Các nút điều chỉnh số lượng món
+    QHBoxLayout* hbDieuChinh = new QHBoxLayout();
+    QPushButton* btnGiam = new QPushButton("-1 So Luong");
+    btnGiam->setStyleSheet("background-color: #E0E0E0; font-weight: bold; height: 32px; border-radius: 4px;");
+    QPushButton* btnTang = new QPushButton("+1 So Luong");
+    btnTang->setStyleSheet("background-color: #E0E0E0; font-weight: bold; height: 32px; border-radius: 4px;");
+    QPushButton* btnXoaMon = new QPushButton("Xoa Mon Nay");
+    btnXoaMon->setStyleSheet("background-color: #FFCDD2; color: #C62828; font-weight: bold; height: 32px; border-radius: 4px;");
+
+    connect(btnGiam, &QPushButton::clicked, this, [this]() { onSuaSoLuongMon(-1); });
+    connect(btnTang, &QPushButton::clicked, this, [this]() { onSuaSoLuongMon(1); });
+    connect(btnXoaMon, &QPushButton::clicked, this, &MainWindow::onXoaMonKhoiBan);
+
+    hbDieuChinh->addWidget(btnGiam);
+    hbDieuChinh->addWidget(btnTang);
+    hbDieuChinh->addWidget(btnXoaMon);
+    vbChiTiet->addLayout(hbDieuChinh);
+
+    // Tổng tiền & số lượng
+    QFrame* frameSummary = new QFrame();
+    frameSummary->setStyleSheet("background-color: #F5F5F5; border: 1px solid #E0E0E0; border-radius: 6px; padding: 6px;");
+    QVBoxLayout* vbSummary = new QVBoxLayout(frameSummary);
+    lblTongSoMonOrder = new QLabel("Tong so luong: 0 mon");
+    lblTongSoMonOrder->setStyleSheet("font-size: 13px; font-weight: bold; color: #424242;");
+    lblTongTienOrder = new QLabel("TONG TIEN: 0 VND");
+    lblTongTienOrder->setStyleSheet("font-size: 18px; font-weight: bold; color: #2E7D32;");
+    vbSummary->addWidget(lblTongSoMonOrder);
+    vbSummary->addWidget(lblTongTienOrder);
+    vbChiTiet->addWidget(frameSummary);
+
+    // Các nút chốt bill / thanh toán
+    QHBoxLayout* hbActions = new QHBoxLayout();
+    QPushButton* btnChotBill = new QPushButton("Chot Bill / Gui Pha Che");
+    btnChotBill->setStyleSheet("background-color: #1976D2; color: white; font-weight: bold; font-size: 13px; height: 40px; border-radius: 5px;");
+    QPushButton* btnThanhToan = new QPushButton("Thanh Toan");
+    btnThanhToan->setStyleSheet("background-color: #2E7D32; color: white; font-weight: bold; font-size: 13px; height: 40px; border-radius: 5px;");
+    QPushButton* btnHuy = new QPushButton("Tra Ban");
+    btnHuy->setStyleSheet("background-color: #757575; color: white; font-weight: bold; font-size: 12px; height: 40px; border-radius: 5px;");
+
+    connect(btnChotBill, &QPushButton::clicked, this, &MainWindow::onChotOrder);
+    connect(btnThanhToan, &QPushButton::clicked, this, &MainWindow::onThanhToanBan);
+    connect(btnHuy, &QPushButton::clicked, this, &MainWindow::onHuyBan);
+
+    hbActions->addWidget(btnChotBill, 2);
+    hbActions->addWidget(btnThanhToan, 2);
+    hbActions->addWidget(btnHuy, 1);
+    vbChiTiet->addLayout(hbActions);
+
+    mainLayout->addWidget(boxChiTiet, 5);
+
+    // ----------------- CỘT 3: THỰC ĐƠN (MENU 8 MÓN) -----------------
+    QGroupBox* boxMenu = new QGroupBox("Thuc Don Quan (Menu)");
+    boxMenu->setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; }");
+    QVBoxLayout* vbMenu = new QVBoxLayout(boxMenu);
+
+    QScrollArea* scrollMenu = new QScrollArea();
+    scrollMenu->setWidgetResizable(true);
+    QWidget* widgetMenuGrid = new QWidget();
+    QVBoxLayout* menuListLayout = new QVBoxLayout(widgetMenuGrid);
+    menuListLayout->setSpacing(8);
+
+    const auto& dsMenu = app.layQuanLyOrder().layMenu();
+    for (const auto& item : dsMenu) {
+        QFrame* card = new QFrame();
+        card->setStyleSheet("QFrame { background-color: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 6px; } "
+                            "QFrame:hover { border: 1px solid #1976D2; background-color: #F8FBFF; }");
+        QHBoxLayout* cardLayout = new QHBoxLayout(card);
+        cardLayout->setContentsMargins(6, 6, 6, 6);
+
+        // Ảnh món
+        QLabel* lblImg = new QLabel();
+        lblImg->setFixedSize(65, 65);
+        lblImg->setStyleSheet("border: 1px solid #EEEEEE; border-radius: 6px; background-color: #FAF5EF;");
+        lblImg->setAlignment(Qt::AlignCenter);
+
+        QPixmap pm(QString::fromStdString(item.hinhAnh));
+        if (!pm.isNull()) {
+            lblImg->setPixmap(pm.scaled(63, 63, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        } else {
+            lblImg->setText("CF");
+        }
+        cardLayout->addWidget(lblImg);
+
+        // Thông tin món
+        QVBoxLayout* infoLayout = new QVBoxLayout();
+        infoLayout->setSpacing(2);
+        QLabel* lblTen = new QLabel(QString::fromStdString(item.tenMon));
+        lblTen->setStyleSheet("font-weight: bold; font-size: 13px; color: #212121;");
+        QLabel* lblGia = new QLabel(QString("%1 VND").arg(QString::number(item.donGia, 'f', 0)));
+        lblGia->setStyleSheet("font-weight: bold; font-size: 13px; color: #D32F2F;");
+        infoLayout->addWidget(lblTen);
+        infoLayout->addWidget(lblGia);
+        cardLayout->addLayout(infoLayout, 1);
+
+        // Nút thêm
+        QPushButton* btnThem = new QPushButton("+ Them");
+        btnThem->setStyleSheet("background-color: #E3F2FD; color: #1976D2; font-weight: bold; border-radius: 5px; height: 32px; padding: 0 10px;");
+        std::string maM = item.maMon;
+        connect(btnThem, &QPushButton::clicked, this, [this, maM]() {
+            onThemMonVaoBan(QString::fromStdString(maM));
+        });
+        cardLayout->addWidget(btnThem);
+
+        menuListLayout->addWidget(card);
+    }
+    menuListLayout->addStretch();
+
+    scrollMenu->setWidget(widgetMenuGrid);
+    vbMenu->addWidget(scrollMenu);
+    mainLayout->addWidget(boxMenu, 4);
+
+    // Cập nhật trạng thái bàn ban đầu
+    refreshSoDoBan();
+    refreshChiTietBan(banDangChon);
+
+    return tabOrder;
+}
+
+// =========================================================================
+// GIAO DIỆN QUẦY PHA CHẾ (KDS)
+// =========================================================================
+QWidget* MainWindow::createKDSWidget() {
+    QWidget* tabKDS = new QWidget();
+    QVBoxLayout* vlKDS = new QVBoxLayout(tabKDS);
+
+    QHBoxLayout* hbHeader = new QHBoxLayout();
+    lblKDSStats = new QLabel("Dang tai danh sach mon can pha che...");
+    lblKDSStats->setStyleSheet("font-size: 15px; font-weight: bold; color: #0D47A1;");
+    QPushButton* btnRefresh = new QPushButton("Lam Moi (F5)");
+    btnRefresh->setStyleSheet("background-color: #1976D2; color: white; font-weight: bold; height: 35px; padding: 0 15px; border-radius: 4px;");
+    connect(btnRefresh, &QPushButton::clicked, this, &MainWindow::refreshKDS);
+
+    hbHeader->addWidget(lblKDSStats, 1);
+    hbHeader->addWidget(btnRefresh);
+    vlKDS->addLayout(hbHeader);
+
+    tableKDS = new QTableWidget();
+    tableKDS->setColumnCount(8);
+    tableKDS->setHorizontalHeaderLabels({"STT", "Ban", "Hinh Anh", "Ten Mon", "So Luong", "Gio Dat", "Trang Thai", "Thao Tac"});
+    tableKDS->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
+    tableKDS->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    tableKDS->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    tableKDS->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    tableKDS->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+    tableKDS->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
+    tableKDS->horizontalHeader()->setSectionResizeMode(6, QHeaderView::ResizeToContents);
+    tableKDS->horizontalHeader()->setSectionResizeMode(7, QHeaderView::ResizeToContents);
+    tableKDS->verticalHeader()->setDefaultSectionSize(65);
+    tableKDS->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    vlKDS->addWidget(tableKDS);
+
+    refreshKDS();
+    return tabKDS;
+}
+
+// =========================================================================
+// GIAO DIỆN MÓN CẦN BƯNG (DÀNH CHO PHỤC VỤ)
+// =========================================================================
+QWidget* MainWindow::createCanBungWidget() {
+    QWidget* tabCanBung = new QWidget();
+    QVBoxLayout* vlCanBung = new QVBoxLayout(tabCanBung);
+
+    QHBoxLayout* hbHeader = new QHBoxLayout();
+    lblCanBungStats = new QLabel("Cac mon da pha che xong - San sang bung ra ban:");
+    lblCanBungStats->setStyleSheet("font-size: 15px; font-weight: bold; color: #2E7D32;");
+    QPushButton* btnRefresh = new QPushButton("Lam Moi");
+    btnRefresh->setStyleSheet("background-color: #2E7D32; color: white; font-weight: bold; height: 35px; padding: 0 15px; border-radius: 4px;");
+    connect(btnRefresh, &QPushButton::clicked, this, &MainWindow::refreshCanBung);
+
+    hbHeader->addWidget(lblCanBungStats, 1);
+    hbHeader->addWidget(btnRefresh);
+    vlCanBung->addLayout(hbHeader);
+
+    tableCanBung = new QTableWidget();
+    tableCanBung->setColumnCount(7);
+    tableCanBung->setHorizontalHeaderLabels({"STT", "Ban", "Ten Mon", "So Luong", "Gio Dat", "Trang Thai", "Thao Tac"});
+    tableCanBung->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    tableCanBung->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    tableCanBung->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    tableCanBung->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    tableCanBung->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+    tableCanBung->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
+    tableCanBung->horizontalHeader()->setSectionResizeMode(6, QHeaderView::ResizeToContents);
+    tableCanBung->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    vlCanBung->addWidget(tableCanBung);
+
+    refreshCanBung();
+    return tabCanBung;
+}
+
+// =========================================================================
+// LOGIC REFRESH & XỬ LÝ SỰ KIỆN ORDER / KDS / BƯNG MÓN
+// =========================================================================
+void MainWindow::refreshSoDoBan() {
+    if (!btnDanhSachBan[0]) return;
+    auto& qlO = app.layQuanLyOrder();
+
+    for (int i = 0; i < 30; ++i) {
+        int soBan = i + 1;
+        QPushButton* btn = btnDanhSachBan[i];
+        if (!btn) continue;
+
+        const BanAn* b = qlO.layBan(soBan);
+        bool coMon = (b && b->coNguoi() && !b->getDsMon().empty());
+
+        QString text = QString("BAN %1\n").arg(soBan);
+        QString style;
+
+        if (coMon) {
+            text += QString("(%1 mon)").arg(b->tongSoLuongMon());
+            if (soBan == banDangChon) {
+                style = "background-color: #0288D1; color: white; border: 3px solid #FF9800; border-radius: 8px; font-weight: bold; font-size: 12px;";
+            } else {
+                style = "background-color: #0288D1; color: white; border: 2px solid #01579B; border-radius: 8px; font-weight: bold; font-size: 12px;";
+            }
+        } else {
+            text += "(Trong)";
+            if (soBan == banDangChon) {
+                style = "background-color: #E0E0E0; color: #424242; border: 3px solid #FF9800; border-radius: 8px; font-weight: bold; font-size: 12px;";
+            } else {
+                style = "background-color: #E0E0E0; color: #616161; border: 1px solid #BDBDBD; border-radius: 8px; font-weight: bold; font-size: 12px;";
+            }
+        }
+
+        btn->setText(text);
+        btn->setStyleSheet(style);
+    }
+}
+
+void MainWindow::refreshChiTietBan(int soBan) {
+    if (!tableChiTietOrder || !lblThongTinBan) return;
+    auto& qlO = app.layQuanLyOrder();
+    const BanAn* b = qlO.layBan(soBan);
+
+    if (!b || !b->coNguoi() || b->getDsMon().empty()) {
+        lblThongTinBan->setText(QString("Dang chon: BAN %1 (TRONG)").arg(soBan));
+        tableChiTietOrder->setRowCount(0);
+        lblTongSoMonOrder->setText("Tong so luong: 0 mon");
+        lblTongTienOrder->setText("TONG TIEN: 0 VND");
+        return;
+    }
+
+    lblThongTinBan->setText(QString("Dang chon: BAN %1 (DA CO KHACH - Vao luc: %2)")
+        .arg(soBan).arg(QString::fromStdString(b->getThoiGianVao())));
+
+    const auto& dsMon = b->getDsMon();
+    tableChiTietOrder->setRowCount(dsMon.size());
+
+    for (size_t i = 0; i < dsMon.size(); ++i) {
+        const auto& m = dsMon[i];
+        tableChiTietOrder->setItem(i, 0, new QTableWidgetItem(QString::number(i + 1)));
+        tableChiTietOrder->setItem(i, 1, new QTableWidgetItem(QString::fromStdString(m.tenMon)));
+        tableChiTietOrder->setItem(i, 2, new QTableWidgetItem(QString("%1").arg(QString::number(m.donGia, 'f', 0))));
+        tableChiTietOrder->setItem(i, 3, new QTableWidgetItem(QString::number(m.soLuong)));
+        tableChiTietOrder->setItem(i, 4, new QTableWidgetItem(QString("%1").arg(QString::number(m.tinhThanhTien(), 'f', 0))));
+
+        QString ttText = "Cho lam";
+        if (m.trangThai == TrangThaiMonOrder::DANG_LAM) ttText = "Dang pha che";
+        else if (m.trangThai == TrangThaiMonOrder::DA_XONG) ttText = "Da xong (Cho bung)";
+        else if (m.trangThai == TrangThaiMonOrder::DA_PHUC_VU) ttText = "Da phuc vu";
+
+        QTableWidgetItem* itTrangThai = new QTableWidgetItem(ttText);
+        if (m.trangThai == TrangThaiMonOrder::CHO_LAM) itTrangThai->setForeground(QBrush(QColor("#E65100")));
+        else if (m.trangThai == TrangThaiMonOrder::DANG_LAM) itTrangThai->setForeground(QBrush(QColor("#1565C0")));
+        else if (m.trangThai == TrangThaiMonOrder::DA_XONG) itTrangThai->setForeground(QBrush(QColor("#2E7D32")));
+        tableChiTietOrder->setItem(i, 5, itTrangThai);
+    }
+
+    lblTongSoMonOrder->setText(QString("Tong so luong: %1 mon").arg(b->tongSoLuongMon()));
+    lblTongTienOrder->setText(QString("TONG TIEN: %1 VND").arg(QString::number(b->tinhTongTien(), 'f', 0)));
+}
+
+void MainWindow::onChonBan(int soBan) {
+    banDangChon = soBan;
+    refreshSoDoBan();
+    refreshChiTietBan(banDangChon);
+}
+
+void MainWindow::onThemMonVaoBan(const QString& maMon) {
+    auto& qlO = app.layQuanLyOrder();
+    qlO.datMon(banDangChon, maMon.toStdString(), 1, Utils::gioHienTai());
+    qlO.luuTrangThaiBan(thuMucDuLieu + "/ban_order.csv");
+
+    refreshSoDoBan();
+    refreshChiTietBan(banDangChon);
+    statusBar()->showMessage(QString("Da them mon vao Ban %1").arg(banDangChon), 2000);
+}
+
+void MainWindow::onSuaSoLuongMon(int delta) {
+    int row = tableChiTietOrder ? tableChiTietOrder->currentRow() : -1;
+    if (row < 0) {
+        QMessageBox::warning(this, "Chua chon mon", "Vui long chon mon can sua so luong trong bang!");
+        return;
+    }
+
+    auto& qlO = app.layQuanLyOrder();
+    BanAn* b = qlO.layBan(banDangChon);
+    if (!b || row >= (int)b->getDsMon().size()) return;
+
+    std::string maM = b->getDsMon()[row].maMon;
+    int slMoi = b->getDsMon()[row].soLuong + delta;
+
+    qlO.suaMon(banDangChon, maM, slMoi);
+    qlO.luuTrangThaiBan(thuMucDuLieu + "/ban_order.csv");
+
+    refreshSoDoBan();
+    refreshChiTietBan(banDangChon);
+}
+
+void MainWindow::onXoaMonKhoiBan() {
+    int row = tableChiTietOrder ? tableChiTietOrder->currentRow() : -1;
+    if (row < 0) {
+        QMessageBox::warning(this, "Chua chon mon", "Vui long chon mon can xoa trong bang!");
+        return;
+    }
+
+    auto& qlO = app.layQuanLyOrder();
+    BanAn* b = qlO.layBan(banDangChon);
+    if (!b || row >= (int)b->getDsMon().size()) return;
+
+    std::string maM = b->getDsMon()[row].maMon;
+    qlO.xoaMon(banDangChon, maM);
+    qlO.luuTrangThaiBan(thuMucDuLieu + "/ban_order.csv");
+
+    refreshSoDoBan();
+    refreshChiTietBan(banDangChon);
+}
+
+void MainWindow::onChotOrder() {
+    auto& qlO = app.layQuanLyOrder();
+    BanAn* b = qlO.layBan(banDangChon);
+    if (!b || b->getDsMon().empty()) {
+        QMessageBox::warning(this, "Ban trong", "Ban chua co mon nao de chot bill!");
+        return;
+    }
+
+    b->setCoNguoi(true);
+    qlO.luuTrangThaiBan(thuMucDuLieu + "/ban_order.csv");
+
+    refreshSoDoBan();
+    refreshChiTietBan(banDangChon);
+    QMessageBox::information(this, "Chot Order",
+        QString("Da chot order cho Ban %1 thanh cong!\nDanh sach mon da duoc chuyen sang quay Pha Che.")
+        .arg(banDangChon));
+}
+
+void MainWindow::onThanhToanBan() {
+    auto& qlO = app.layQuanLyOrder();
+    BanAn* b = qlO.layBan(banDangChon);
+    if (!b || !b->coNguoi() || b->getDsMon().empty()) {
+        QMessageBox::warning(this, "Khong the thanh toan", "Ban nay dang trong, khong co hoa don de thanh toan!");
+        return;
+    }
+
+    double tong = b->tinhTongTien();
+    QString xacNhan = QString("Xac nhan thanh toan cho BAN %1\n"
+                              "Tong tien: %2 VND\n\n"
+                              "Sau khi thanh toan, khach da ve va ban se chuyen lai mau xam.")
+                      .arg(banDangChon).arg(QString::number(tong, 'f', 0));
+
+    if (QMessageBox::question(this, "Thanh Toan", xacNhan, QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
+        qlO.thanhToan(banDangChon, qlTK.getTenDangNhapHienTai(), thuMucDuLieu + "/hoadon.csv");
+        qlO.luuTrangThaiBan(thuMucDuLieu + "/ban_order.csv");
+
+        refreshSoDoBan();
+        refreshChiTietBan(banDangChon);
+        QMessageBox::information(this, "Hoan Tat Thanh Toan",
+            QString("Da thanh toan thanh cong cho Ban %1! Ban da ve trang thai trong (mau xam).")
+            .arg(banDangChon));
+    }
+}
+
+void MainWindow::onHuyBan() {
+    auto& qlO = app.layQuanLyOrder();
+    BanAn* b = qlO.layBan(banDangChon);
+    if (!b || !b->coNguoi()) {
+        QMessageBox::information(this, "Thong bao", "Ban nay von da trong.");
+        return;
+    }
+
+    if (QMessageBox::question(this, "Tra ban",
+        QString("Ban co chac muon huy toan bo mon va tra Ban %1 ve trang thai trong?").arg(banDangChon),
+        QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
+        b->resetBan();
+        qlO.luuTrangThaiBan(thuMucDuLieu + "/ban_order.csv");
+        refreshSoDoBan();
+        refreshChiTietBan(banDangChon);
+    }
+}
+
+void MainWindow::refreshKDS() {
+    if (!tableKDS) return;
+    auto& qlO = app.layQuanLyOrder();
+    auto dsPhaChe = qlO.layDanhSachCanPhaChe();
+
+    tableKDS->setRowCount(dsPhaChe.size());
+    int choLam = 0, dangLam = 0;
+
+    for (size_t i = 0; i < dsPhaChe.size(); ++i) {
+        int sb = dsPhaChe[i].soBan;
+        const auto& item = dsPhaChe[i].chiTiet;
+
+        if (item.trangThai == TrangThaiMonOrder::CHO_LAM) choLam++;
+        else if (item.trangThai == TrangThaiMonOrder::DANG_LAM) dangLam++;
+
+        tableKDS->setItem(i, 0, new QTableWidgetItem(QString::number(i + 1)));
+        tableKDS->setItem(i, 1, new QTableWidgetItem(QString("Ban %1").arg(sb)));
+
+        // Hình ảnh món
+        QLabel* lblImg = new QLabel();
+        lblImg->setAlignment(Qt::AlignCenter);
+        const MonAn* mon = qlO.timMon(item.maMon);
+        if (mon) {
+            QPixmap pm(QString::fromStdString(mon->hinhAnh));
+            if (!pm.isNull()) lblImg->setPixmap(pm.scaled(55, 55, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        }
+        tableKDS->setCellWidget(i, 2, lblImg);
+
+        tableKDS->setItem(i, 3, new QTableWidgetItem(QString::fromStdString(item.tenMon)));
+        tableKDS->setItem(i, 4, new QTableWidgetItem(QString::number(item.soLuong)));
+        tableKDS->setItem(i, 5, new QTableWidgetItem(QString::fromStdString(item.thoiGianDat)));
+
+        QString tt = (item.trangThai == TrangThaiMonOrder::CHO_LAM) ? "Cho lam" : "Dang pha che";
+        QTableWidgetItem* itTT = new QTableWidgetItem(tt);
+        itTT->setForeground(QBrush(item.trangThai == TrangThaiMonOrder::CHO_LAM ? QColor("#E65100") : QColor("#1565C0")));
+        tableKDS->setItem(i, 6, itTT);
+
+        // Nút thao tác
+        QWidget* pWidget = new QWidget();
+        QHBoxLayout* hl = new QHBoxLayout(pWidget);
+        hl->setContentsMargins(4, 4, 4, 4);
+
+        std::string maM = item.maMon;
+        if (item.trangThai == TrangThaiMonOrder::CHO_LAM) {
+            QPushButton* btnXacNhan = new QPushButton("Xac Nhan");
+            btnXacNhan->setStyleSheet("background-color: #E65100; color: white; font-weight: bold; border-radius: 4px; height: 32px; padding: 0 10px;");
+            connect(btnXacNhan, &QPushButton::clicked, this, [this, sb, maM]() {
+                onKDSXacNhan(sb, QString::fromStdString(maM));
+            });
+            hl->addWidget(btnXacNhan);
+        } else {
+            QPushButton* btnHoanThanh = new QPushButton("Hoan Thanh");
+            btnHoanThanh->setStyleSheet("background-color: #2E7D32; color: white; font-weight: bold; border-radius: 4px; height: 32px; padding: 0 10px;");
+            connect(btnHoanThanh, &QPushButton::clicked, this, [this, sb, maM]() {
+                onKDSHoanThanh(sb, QString::fromStdString(maM));
+            });
+            hl->addWidget(btnHoanThanh);
+        }
+
+        tableKDS->setCellWidget(i, 7, pWidget);
+    }
+
+    if (lblKDSStats) {
+        lblKDSStats->setText(QString("Quay Pha Che (KDS) - Cho lam: %1 mon | Dang lam: %2 mon")
+            .arg(choLam).arg(dangLam));
+    }
+}
+
+void MainWindow::onKDSXacNhan(int soBan, const QString& maMon) {
+    auto& qlO = app.layQuanLyOrder();
+    qlO.xacNhanPhaChe(soBan, maMon.toStdString());
+    qlO.luuTrangThaiBan(thuMucDuLieu + "/ban_order.csv");
+
+    refreshKDS();
+    refreshChiTietBan(banDangChon);
+    statusBar()->showMessage(QString("Quay Pha Che da xac nhan lam mon cho Ban %1").arg(soBan), 3000);
+}
+
+void MainWindow::onKDSHoanThanh(int soBan, const QString& maMon) {
+    auto& qlO = app.layQuanLyOrder();
+    qlO.hoanThanhPhaChe(soBan, maMon.toStdString());
+    qlO.luuTrangThaiBan(thuMucDuLieu + "/ban_order.csv");
+
+    refreshKDS();
+    refreshChiTietBan(banDangChon);
+    QMessageBox::information(this, "Hoan Thanh Mon",
+        QString("Da hoan thanh mon cho Ban %1!\nThong bao da duoc gui den nhan vien Phuc Vu de bung mon.")
+        .arg(soBan));
+}
+
+void MainWindow::refreshCanBung() {
+    if (!tableCanBung) return;
+    auto& qlO = app.layQuanLyOrder();
+    auto dsCanBung = qlO.layDanhSachCanBung();
+
+    tableCanBung->setRowCount(dsCanBung.size());
+    for (size_t i = 0; i < dsCanBung.size(); ++i) {
+        int sb = dsCanBung[i].soBan;
+        const auto& item = dsCanBung[i].chiTiet;
+
+        tableCanBung->setItem(i, 0, new QTableWidgetItem(QString::number(i + 1)));
+        tableCanBung->setItem(i, 1, new QTableWidgetItem(QString("Ban %1").arg(sb)));
+        tableCanBung->setItem(i, 2, new QTableWidgetItem(QString::fromStdString(item.tenMon)));
+        tableCanBung->setItem(i, 3, new QTableWidgetItem(QString::number(item.soLuong)));
+        tableCanBung->setItem(i, 4, new QTableWidgetItem(QString::fromStdString(item.thoiGianDat)));
+
+        QTableWidgetItem* itTT = new QTableWidgetItem("Da xong - Cho bung ra ban");
+        itTT->setForeground(QBrush(QColor("#2E7D32")));
+        tableCanBung->setItem(i, 5, itTT);
+
+        QPushButton* btnDaBung = new QPushButton("Da Bung Ra Ban");
+        btnDaBung->setStyleSheet("background-color: #1976D2; color: white; font-weight: bold; border-radius: 4px; height: 30px; padding: 0 10px;");
+        std::string maM = item.maMon;
+        connect(btnDaBung, &QPushButton::clicked, this, [this, sb, maM]() {
+            onPhuVuDaBung(sb, QString::fromStdString(maM));
+        });
+        tableCanBung->setCellWidget(i, 6, btnDaBung);
+    }
+
+    if (lblCanBungStats) {
+        lblCanBungStats->setText(QString("Danh sach mon can bung ra ban: %1 mon").arg(dsCanBung.size()));
+    }
+}
+
+void MainWindow::onPhuVuDaBung(int soBan, const QString& maMon) {
+    auto& qlO = app.layQuanLyOrder();
+    qlO.xacNhanDaBung(soBan, maMon.toStdString());
+    qlO.luuTrangThaiBan(thuMucDuLieu + "/ban_order.csv");
+
+    refreshCanBung();
+    refreshChiTietBan(banDangChon);
+    statusBar()->showMessage(QString("Da bung mon ra Ban %1").arg(soBan), 3000);
+}
+
+void MainWindow::onTimerSyncOrder() {
+    auto& qlO = app.layQuanLyOrder();
+
+    // 1. Kiểm tra thông báo cho Phục vụ
+    if (qlO.coThongBaoMoi()) {
+        auto dsTB = qlO.layVaXoaThongBaoPhuVu();
+        QString fullMsg;
+        for (const auto& tb : dsTB) {
+            if (!fullMsg.isEmpty()) fullMsg += "\n";
+            fullMsg += "🔔 " + QString::fromStdString(tb);
+        }
+        if (!fullMsg.isEmpty()) {
+            QMessageBox::information(this, "Thong Bao Phuc Vu", fullMsg);
+        }
+        if (tableCanBung) {
+            refreshCanBung();
+        }
+    }
+
+    // 2. Cập nhật màu bàn định kỳ
+    if (btnDanhSachBan[0]) {
+        refreshSoDoBan();
+    }
 }
