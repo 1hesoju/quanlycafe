@@ -49,6 +49,16 @@ MainWindow::MainWindow(QuanLyQuanCafe& cafeApp, QuanLyTaiKhoan& tkManager,
     lblCanBungStats = nullptr;
     for (int i = 0; i < 30; ++i) btnDanhSachBan[i] = nullptr;
 
+    dateKetCa = nullptr;
+    tableKetCaNgay = nullptr;
+    lblTongDauCaNgay = nullptr;
+    lblTongThuNgay = nullptr;
+    lblTongCuoiNgay = nullptr;
+    dateDoanhThuThang = nullptr;
+    tableDoanhThuThang = nullptr;
+    lblTongThuThang = nullptr;
+    lblTongHDThang = nullptr;
+
     initUI();
 
     timerSyncOrder = new QTimer(this);
@@ -405,9 +415,10 @@ void MainWindow::buildAdminTabs() {
     connect(btnResetPW, &QPushButton::clicked, this, &MainWindow::onResetMatKhau);
     connect(btnXoaTK, &QPushButton::clicked, this, &MainWindow::onXoaTaiKhoan);
 
-    // Tab Order Mon va Quay Pha Che cho Admin
+    // Tab Order Mon, Quay Pha Che va Ket Ca / Doanh Thu cho Admin
     tabWidget->addTab(createOrderWidget(), "Order Mon (iPOS)");
     tabWidget->addTab(createKDSWidget(), "Quay Pha Che (KDS)");
+    tabWidget->addTab(createDoanhThuWidget(), "Ket Ca & Doanh Thu");
 
     // Nạp dữ liệu ban đầu
     refreshDashboard();
@@ -568,6 +579,7 @@ void MainWindow::buildEmployeeTabs() {
         tabWidget->addTab(createCanBungWidget(), "Mon Can Bung (Phuc Vu)");
     } else if (role == "THU_NGAN") {
         tabWidget->addTab(createOrderWidget(), "Ban & Order (iPOS)");
+        tabWidget->addTab(createDoanhThuWidget(), "Ket Ca & Doanh Thu");
     } else if (role == "PHA_CHE") {
         tabWidget->addTab(createKDSWidget(), "Quay Pha Che (KDS)");
     } else if (role == "QUAN_LY") {
@@ -1753,9 +1765,11 @@ void MainWindow::onThanhToanBan() {
     if (QMessageBox::question(this, "Thanh Toan", xacNhan, QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
         qlO.thanhToan(banDangChon, qlTK.getTenDangNhapHienTai(), thuMucDuLieu + "/hoadon.csv");
         qlO.luuTrangThaiBan(thuMucDuLieu + "/ban_order.csv");
+        app.layQuanLyDoanhThu().taiHoaDon(thuMucDuLieu + "/hoadon.csv");
 
         refreshSoDoBan();
         refreshChiTietBan(banDangChon);
+        if (tableKetCaNgay) refreshTabDoanhThu();
         QMessageBox::information(this, "Hoan Tat Thanh Toan",
             QString("Da thanh toan thanh cong cho Ban %1! Ban da ve trang thai trong (mau xam).")
             .arg(banDangChon));
@@ -1936,5 +1950,329 @@ void MainWindow::onTimerSyncOrder() {
     // 2. Cập nhật màu bàn định kỳ
     if (btnDanhSachBan[0]) {
         refreshSoDoBan();
+    }
+}
+
+// =========================================================================
+// GIAO DIEN KET CA & DOANH THU (CHO ADMIN VA THU NGAN)
+// =========================================================================
+QWidget* MainWindow::createDoanhThuWidget() {
+    QWidget* tabDT = new QWidget();
+    QVBoxLayout* vlMain = new QVBoxLayout(tabDT);
+    vlMain->setSpacing(12);
+
+    QTabWidget* subTab = new QTabWidget();
+    subTab->setStyleSheet("QTabBar::tab { height: 32px; min-width: 140px; font-weight: bold; font-size: 13px; }");
+
+    // ================= SUBTAB 1: KẾT CA THEO NGÀY =================
+    QWidget* tabNgay = new QWidget();
+    QVBoxLayout* vlNgay = new QVBoxLayout(tabNgay);
+    vlNgay->setSpacing(10);
+
+    // Thanh chọn ngày & nút thao tác
+    QHBoxLayout* hbNgayTop = new QHBoxLayout();
+    hbNgayTop->addWidget(new QLabel("<b>Chon Ngay Xem:</b>"));
+    dateKetCa = new QDateEdit(QDate::currentDate());
+    dateKetCa->setDisplayFormat("dd/MM/yyyy");
+    dateKetCa->setCalendarPopup(true);
+    hbNgayTop->addWidget(dateKetCa);
+
+    QPushButton* btnNhapDauCa = new QPushButton("Nhap Tien Dau Ca");
+    btnNhapDauCa->setStyleSheet("background-color: #0288D1; color: white; font-weight: bold; height: 34px; padding: 0 12px; border-radius: 4px;");
+    QPushButton* btnChotCa = new QPushButton("Chot Ket Ca");
+    btnChotCa->setStyleSheet("background-color: #2E7D32; color: white; font-weight: bold; height: 34px; padding: 0 12px; border-radius: 4px;");
+    QPushButton* btnLamMoiNgay = new QPushButton("Lam Moi (F5)");
+    btnLamMoiNgay->setStyleSheet("background-color: #757575; color: white; font-weight: bold; height: 34px; padding: 0 12px; border-radius: 4px;");
+
+    hbNgayTop->addWidget(btnNhapDauCa);
+    hbNgayTop->addWidget(btnChotCa);
+    hbNgayTop->addWidget(btnLamMoiNgay);
+    hbNgayTop->addStretch();
+    vlNgay->addLayout(hbNgayTop);
+
+    // Bảng danh sách các ca trong ngày
+    tableKetCaNgay = new QTableWidget();
+    tableKetCaNgay->setColumnCount(9);
+    tableKetCaNgay->setHorizontalHeaderLabels({
+        "Ma Ca", "Ten Ca", "Khung Gio", "Tien Dau Ca", "Doanh Thu Ca", "Tong Tien Cuoi Ca", "Nguoi Chot", "Thoi Gian Chot", "Trang Thai"
+    });
+    tableKetCaNgay->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    tableKetCaNgay->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    tableKetCaNgay->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    tableKetCaNgay->setSelectionBehavior(QAbstractItemView::SelectRows);
+    tableKetCaNgay->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    vlNgay->addWidget(tableKetCaNgay);
+
+    // Box tổng kết ngày
+    QGroupBox* boxSumNgay = new QGroupBox("Tong Hop Tai Chinh Trong Ngay");
+    boxSumNgay->setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; color: #0D47A1; }");
+    QHBoxLayout* hbSumNgay = new QHBoxLayout(boxSumNgay);
+
+    lblTongDauCaNgay = new QLabel("Tong tien dau ca: 0 VND");
+    lblTongDauCaNgay->setStyleSheet("font-size: 14px; font-weight: bold; color: #0288D1;");
+    lblTongThuNgay = new QLabel("Tong doanh thu ca: 0 VND");
+    lblTongThuNgay->setStyleSheet("font-size: 14px; font-weight: bold; color: #2E7D32;");
+    lblTongCuoiNgay = new QLabel("TONG TIEN THU VE: 0 VND");
+    lblTongCuoiNgay->setStyleSheet("font-size: 16px; font-weight: bold; color: #D32F2F;");
+
+    hbSumNgay->addWidget(lblTongDauCaNgay);
+    hbSumNgay->addWidget(lblTongThuNgay);
+    hbSumNgay->addWidget(lblTongCuoiNgay);
+    vlNgay->addWidget(boxSumNgay);
+
+    subTab->addTab(tabNgay, "Ket Ca Theo Ngay");
+
+    // ================= SUBTAB 2: DOANH THU THEO THÁNG =================
+    QWidget* tabThang = new QWidget();
+    QVBoxLayout* vlThang = new QVBoxLayout(tabThang);
+    vlThang->setSpacing(10);
+
+    QHBoxLayout* hbThangTop = new QHBoxLayout();
+    hbThangTop->addWidget(new QLabel("<b>Chon Thang/Nam:</b>"));
+    dateDoanhThuThang = new QDateEdit(QDate::currentDate());
+    dateDoanhThuThang->setDisplayFormat("MM/yyyy");
+    dateDoanhThuThang->installEventFilter(new WheelBlocker(dateDoanhThuThang));
+    QPushButton* btnLamMoiThang = new QPushButton("Lam Moi Du Lieu");
+    btnLamMoiThang->setStyleSheet("background-color: #1976D2; color: white; font-weight: bold; height: 32px; padding: 0 12px; border-radius: 4px;");
+
+    hbThangTop->addWidget(dateDoanhThuThang);
+    hbThangTop->addWidget(btnLamMoiThang);
+    hbThangTop->addStretch();
+    vlThang->addLayout(hbThangTop);
+
+    tableDoanhThuThang = new QTableWidget();
+    tableDoanhThuThang->setColumnCount(6);
+    tableDoanhThuThang->setHorizontalHeaderLabels({
+        "Ngay", "So Hoa Don", "Tien Dau Ca", "Doanh Thu Ban Hang", "Tong Tien Trong Ngay", "So Ca Da Chot"
+    });
+    tableDoanhThuThang->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    tableDoanhThuThang->setSelectionBehavior(QAbstractItemView::SelectRows);
+    tableDoanhThuThang->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    vlThang->addWidget(tableDoanhThuThang);
+
+    QGroupBox* boxSumThang = new QGroupBox("Tong Hop Doanh Thu Thu Ve Trong Thang");
+    boxSumThang->setStyleSheet("QGroupBox { font-weight: bold; font-size: 13px; color: #2E7D32; }");
+    QHBoxLayout* hbSumThang = new QHBoxLayout(boxSumThang);
+
+    lblTongHDThang = new QLabel("Tong so don hang trong thang: 0");
+    lblTongHDThang->setStyleSheet("font-size: 15px; font-weight: bold; color: #1565C0;");
+    lblTongThuThang = new QLabel("TONG DOANH THU THANG: 0 VND");
+    lblTongThuThang->setStyleSheet("font-size: 18px; font-weight: bold; color: #2E7D32;");
+
+    hbSumThang->addWidget(lblTongHDThang);
+    hbSumThang->addWidget(lblTongThuThang);
+    vlThang->addWidget(boxSumThang);
+
+    subTab->addTab(tabThang, "Tong Hop Thu Ve Trong Thang");
+
+    vlMain->addWidget(subTab);
+
+    // Kết nối Signal - Slots
+    connect(dateKetCa, &QDateEdit::dateChanged, this, &MainWindow::onNgayKetCaChanged);
+    connect(btnNhapDauCa, &QPushButton::clicked, this, &MainWindow::onNhapTienDauCa);
+    connect(btnChotCa, &QPushButton::clicked, this, &MainWindow::onChotKetCa);
+    connect(btnLamMoiNgay, &QPushButton::clicked, this, &MainWindow::refreshBangKetCaNgay);
+
+    connect(dateDoanhThuThang, &QDateEdit::dateChanged, this, &MainWindow::onThangDoanhThuChanged);
+    connect(btnLamMoiThang, &QPushButton::clicked, this, &MainWindow::refreshBangDoanhThuThang);
+
+    refreshTabDoanhThu();
+    return tabDT;
+}
+
+void MainWindow::refreshTabDoanhThu() {
+    refreshBangKetCaNgay();
+    refreshBangDoanhThuThang();
+}
+
+void MainWindow::refreshBangKetCaNgay() {
+    if (!tableKetCaNgay || !dateKetCa) return;
+
+    std::string ngay = dateKetCa->date().toString("dd/MM/yyyy").toStdString();
+    auto& qlDT = app.layQuanLyDoanhThu();
+    auto dsCa = app.layLich().xemLichNgay(ngay);
+
+    tableKetCaNgay->setRowCount(dsCa.size());
+
+    double tongDauCa = 0.0;
+    double tongDoanhThu = 0.0;
+    double tongCuoiNgay = 0.0;
+
+    for (size_t i = 0; i < dsCa.size(); ++i) {
+        const auto& ca = dsCa[i];
+        std::string maCa = ca.getMaCa();
+        std::string tenCa = ca.getTenCa();
+        std::string khungGio = ca.getGioBatDau() + " - " + ca.getGioKetThuc();
+
+        const KetCa* kc = qlDT.timKetCa(ngay, maCa);
+
+        // Tính doanh thu thực tế phát sinh trong khung giờ ca
+        auto dsHD = qlDT.layHoaDonTrongCa(ngay, ca.getGioBatDau(), ca.getGioKetThuc());
+        double doanhThuThucTe = 0.0;
+        for (const auto& hd : dsHD) doanhThuThucTe += hd.tongTien;
+
+        double tienDau = kc ? kc->tienDauCa : 0.0;
+        double tienThu = kc ? (kc->nguoiChot.empty() ? doanhThuThucTe : kc->doanhThuCa) : doanhThuThucTe;
+        double tongCa = tienDau + tienThu;
+
+        tongDauCa += tienDau;
+        tongDoanhThu += tienThu;
+        tongCuoiNgay += tongCa;
+
+        tableKetCaNgay->setItem(i, 0, new QTableWidgetItem(QString::fromStdString(maCa)));
+        tableKetCaNgay->setItem(i, 1, new QTableWidgetItem(QString::fromStdString(tenCa)));
+        tableKetCaNgay->setItem(i, 2, new QTableWidgetItem(QString::fromStdString(khungGio)));
+        tableKetCaNgay->setItem(i, 3, new QTableWidgetItem(QString("%1 VND").arg(QString::number(tienDau, 'f', 0))));
+        tableKetCaNgay->setItem(i, 4, new QTableWidgetItem(QString("%1 VND (%2 don)").arg(QString::number(tienThu, 'f', 0)).arg(dsHD.size())));
+        tableKetCaNgay->setItem(i, 5, new QTableWidgetItem(QString("%1 VND").arg(QString::number(tongCa, 'f', 0))));
+
+        if (kc && !kc->nguoiChot.empty()) {
+            tableKetCaNgay->setItem(i, 6, new QTableWidgetItem(QString::fromStdString(kc->nguoiChot)));
+            tableKetCaNgay->setItem(i, 7, new QTableWidgetItem(QString::fromStdString(kc->thoiGianChot)));
+            QTableWidgetItem* itTrangThai = new QTableWidgetItem("DA CHOT KET CA");
+            itTrangThai->setForeground(QBrush(QColor("#2E7D32")));
+            tableKetCaNgay->setItem(i, 8, itTrangThai);
+        } else {
+            tableKetCaNgay->setItem(i, 6, new QTableWidgetItem("—"));
+            tableKetCaNgay->setItem(i, 7, new QTableWidgetItem("—"));
+            QTableWidgetItem* itTrangThai = new QTableWidgetItem("Chua chot ca");
+            itTrangThai->setForeground(QBrush(QColor("#E65100")));
+            tableKetCaNgay->setItem(i, 8, itTrangThai);
+        }
+    }
+
+    if (lblTongDauCaNgay) {
+        lblTongDauCaNgay->setText(QString("Tong tien dau ca: %1 VND").arg(QString::number(tongDauCa, 'f', 0)));
+    }
+    if (lblTongThuNgay) {
+        lblTongThuNgay->setText(QString("Tong doanh thu ca: %1 VND").arg(QString::number(tongDoanhThu, 'f', 0)));
+    }
+    if (lblTongCuoiNgay) {
+        lblTongCuoiNgay->setText(QString("TONG TIEN THU VE: %1 VND").arg(QString::number(tongCuoiNgay, 'f', 0)));
+    }
+}
+
+void MainWindow::refreshBangDoanhThuThang() {
+    if (!tableDoanhThuThang || !dateDoanhThuThang) return;
+
+    std::string thangNam = dateDoanhThuThang->date().toString("MM/yyyy").toStdString();
+    auto& qlDT = app.layQuanLyDoanhThu();
+    DoanhThuThang dtThang = qlDT.thongKeDoanhThuThang(thangNam);
+
+    tableDoanhThuThang->setRowCount(dtThang.chiTietCacNgay.size());
+
+    for (size_t i = 0; i < dtThang.chiTietCacNgay.size(); ++i) {
+        const auto& d = dtThang.chiTietCacNgay[i];
+        tableDoanhThuThang->setItem(i, 0, new QTableWidgetItem(QString::fromStdString(d.ngay)));
+        tableDoanhThuThang->setItem(i, 1, new QTableWidgetItem(QString::number(d.soHoaDon)));
+        tableDoanhThuThang->setItem(i, 2, new QTableWidgetItem(QString("%1 VND").arg(QString::number(d.tongTienDauCa, 'f', 0))));
+        tableDoanhThuThang->setItem(i, 3, new QTableWidgetItem(QString("%1 VND").arg(QString::number(d.tongDoanhThu, 'f', 0))));
+        tableDoanhThuThang->setItem(i, 4, new QTableWidgetItem(QString("%1 VND").arg(QString::number(d.tongTienCuoiNgay, 'f', 0))));
+        tableDoanhThuThang->setItem(i, 5, new QTableWidgetItem(QString::number(d.soCaDaKet)));
+    }
+
+    if (lblTongHDThang) {
+        lblTongHDThang->setText(QString("Tong so don hang trong thang: %1 don").arg(dtThang.tongSoHoaDon));
+    }
+    if (lblTongThuThang) {
+        lblTongThuThang->setText(QString("TONG DOANH THU THANG: %1 VND").arg(QString::number(dtThang.tongDoanhThu, 'f', 0)));
+    }
+}
+
+void MainWindow::onNgayKetCaChanged() {
+    refreshBangKetCaNgay();
+}
+
+void MainWindow::onThangDoanhThuChanged() {
+    refreshBangDoanhThuThang();
+}
+
+void MainWindow::onNhapTienDauCa() {
+    int row = tableKetCaNgay ? tableKetCaNgay->currentRow() : -1;
+    if (row < 0) {
+        QMessageBox::warning(this, "Chua chon ca", "Vui long chon ca lam viec trong bang de nhap tien bat dau ca!");
+        return;
+    }
+
+    std::string ngay = dateKetCa->date().toString("dd/MM/yyyy").toStdString();
+    std::string maCa = tableKetCaNgay->item(row, 0)->text().toStdString();
+    std::string tenCa = tableKetCaNgay->item(row, 1)->text().toStdString();
+
+    auto& qlDT = app.layQuanLyDoanhThu();
+    const KetCa* kc = qlDT.timKetCa(ngay, maCa);
+    double tienHienTai = kc ? kc->tienDauCa : 0.0;
+
+    bool ok = false;
+    double tienMoi = QInputDialog::getDouble(this, "Nhap Tien Dau Ca",
+        QString("Nhap so tien bat dau ca cho [%1 - %2]:").arg(QString::fromStdString(maCa)).arg(QString::fromStdString(tenCa)),
+        tienHienTai, 0.0, 100000000.0, 0, &ok);
+
+    if (ok) {
+        qlDT.datTienDauCa(ngay, maCa, tenCa, tienMoi);
+        qlDT.luuKetCa(thuMucDuLieu + "/ketca.csv");
+        refreshTabDoanhThu();
+        QMessageBox::information(this, "Thanh Cong",
+            QString("Da cap nhat so tien bat dau ca la %1 VND!").arg(QString::number(tienMoi, 'f', 0)));
+    }
+}
+
+void MainWindow::onChotKetCa() {
+    int row = tableKetCaNgay ? tableKetCaNgay->currentRow() : -1;
+    if (row < 0) {
+        QMessageBox::warning(this, "Chua chon ca", "Vui long chon ca lam viec trong bang de chot ket ca!");
+        return;
+    }
+
+    std::string ngay = dateKetCa->date().toString("dd/MM/yyyy").toStdString();
+    std::string maCa = tableKetCaNgay->item(row, 0)->text().toStdString();
+    std::string tenCa = tableKetCaNgay->item(row, 1)->text().toStdString();
+    std::string khungGio = tableKetCaNgay->item(row, 2)->text().toStdString();
+
+    auto parts = Utils::split(khungGio, '-');
+    std::string gioBD = parts.size() > 0 ? Utils::trim(parts[0]) : "00:00";
+    std::string gioKT = parts.size() > 1 ? Utils::trim(parts[1]) : "23:59";
+
+    auto& qlDT = app.layQuanLyDoanhThu();
+    const KetCa* kc = qlDT.timKetCa(ngay, maCa);
+
+    auto dsHD = qlDT.layHoaDonTrongCa(ngay, gioBD, gioKT);
+    double doanhThu = 0.0;
+    for (const auto& hd : dsHD) doanhThu += hd.tongTien;
+
+    double tienDau = kc ? kc->tienDauCa : 0.0;
+    double tongCuoi = tienDau + doanhThu;
+
+    QString msgXacNhan = QString(
+        "XAC NHAN CHOT KET CA LAM VIEC:\n"
+        "- Ngay: %1\n"
+        "- Ca: %2 (%3)\n"
+        "- Khung gio: %4\n"
+        "- So hoa don thu duoc: %5 don\n"
+        "- Tien bat dau ca: %6 VND\n"
+        "- Doanh thu ban hang: %7 VND\n"
+        "------------------------------------\n"
+        "==> TONG TIEN THU VE CUOI CA: %8 VND\n\n"
+        "Ban co chac chan muon chot ket ca nay khong?"
+    ).arg(QString::fromStdString(ngay))
+     .arg(QString::fromStdString(maCa))
+     .arg(QString::fromStdString(tenCa))
+     .arg(QString::fromStdString(khungGio))
+     .arg(dsHD.size())
+     .arg(QString::number(tienDau, 'f', 0))
+     .arg(QString::number(doanhThu, 'f', 0))
+     .arg(QString::number(tongCuoi, 'f', 0));
+
+    if (QMessageBox::question(this, "Xac Nhan Ket Ca", msgXacNhan, QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
+        std::string nguoiChot = qlTK.getTenDangNhapHienTai();
+        qlDT.ketCaLamViec(ngay, maCa, tenCa, tienDau, doanhThu, tongCuoi, nguoiChot);
+        qlDT.luuKetCa(thuMucDuLieu + "/ketca.csv");
+
+        refreshTabDoanhThu();
+        QMessageBox::information(this, "Chot Ca Thanh Cong",
+            QString("Ca [%1] ngay %2 da duoc chot thanh cong boi %3!\nTong tien thu ve: %4 VND")
+            .arg(QString::fromStdString(maCa))
+            .arg(QString::fromStdString(ngay))
+            .arg(QString::fromStdString(nguoiChot))
+            .arg(QString::number(tongCuoi, 'f', 0)));
     }
 }

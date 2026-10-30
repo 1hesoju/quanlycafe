@@ -76,6 +76,21 @@ Dự án được xây dựng hoàn toàn bằng ngôn ngữ **C++ tiêu chuẩn
 - **Thông báo Real-time:** Khi quầy Pha Chế bấm "Hoàn thành", hệ thống sẽ tự động bật thông báo Popup và cập nhật danh sách các món cần bưng kèm chính xác số bàn.
 - **Xác nhận bưng món:** Cung cấp nút "Đã bưng ra bàn" để nhân viên phục vụ xác nhận sau khi đưa đồ uống đến bàn khách, đưa trạng thái món sang "Đã phục vụ".
 
+### 2.6. Phân hệ Quản lý Kết ca & Thống kê Doanh thu (Shift Cash-out & Revenue)
+- **Phân quyền bảo mật nghiêm ngặt:** Chỉ có **Quản trị viên (`Admin`)** và **Thu ngân (`THU_NGAN`)** mới có quyền truy cập, xem và thao tác tab này; các vai trò khác (`PHA_CHE`, `PHU_VU`, `BAO_VE`, `QUAN_LY`) hoàn toàn bị ẩn để bảo đảm an toàn tài chính.
+- **Quản lý Tiền đầu ca (Tiền mặt giao ca):**
+  - Cho phép Thu ngân hoặc Admin nhập số tiền mặt bắt đầu ca (tiền thối/tiền két ban đầu) cho từng ca làm việc trong ngày.
+  - Tự động ghi nhận và lưu trữ vào tệp dữ liệu `data/ketca.csv`.
+- **Tổng tiền kết ca theo từng ngày:**
+  - Lọc và hiển thị danh sách toàn bộ các ca làm việc trong ngày được chọn kèm khung giờ tương ứng.
+  - **Tự động bóc tách doanh thu thực tế:** Tổng hợp tự động các hóa đơn được thanh toán trong khung giờ của từng ca (`TienDauCa + DoanhThuCa = TongTienCuoiCa`).
+  - **Chốt kết ca an toàn:** Cung cấp nút "Chốt Kết Ca", tự động ghi nhận người chốt (tên tài khoản đăng nhập), thời gian chốt, số lượng đơn hàng và chuyển trạng thái sang `ĐÃ CHỐT KẾT CA`.
+  - Hộp tổng hợp tài chính ngày: Hiển thị trực quan `Tổng tiền đầu ca`, `Tổng doanh thu các ca` và `TỔNG TIỀN THU VỀ TRONG NGÀY`.
+- **Tổng hợp tiền thu về trong tháng (Monthly Financial Summary):**
+  - Bộ chọn Tháng/Năm linh hoạt (chống lăn chuột vô ý).
+  - Thống kê chi tiết danh sách từng ngày trong tháng: Ngày, Số hóa đơn phát sinh, Tiền đầu ca, Doanh thu bán hàng, Tổng tiền trong ngày, Số ca đã chốt.
+  - Tổng kết toàn tháng: Hiển thị tổng số lượng đơn hàng đã bán và **TỔNG DOANH THU THỰC TẾ THU VỀ TRONG THÁNG**.
+
 ---
 
 ## 3. KIẾN TRÚC LẬP TRÌNH HƯỚNG ĐỐI TƯỢNG (OOP DESIGN)
@@ -135,6 +150,7 @@ Dự án áp dụng mô hình **Flat-file Database kết hợp In-Memory Cache**
 | `menu.csv` | Danh mục thực đơn đồ uống, đơn giá, đường dẫn hình ảnh | Khóa chính: `maMon` |
 | `ban_order.csv` | Trạng thái 30 bàn và danh sách món chi tiết đang order | Khóa chính: `soBan, maMon` |
 | `hoadon.csv` | Lịch sử hóa đơn thanh toán phục vụ thống kê doanh thu | Khóa chính: `maHD` |
+| `ketca.csv` | Dữ liệu tiền đầu ca, doanh thu ca, tổng kết ca và người chốt ca | Khóa chính: `maKetCa` (ngay_maCa) |
 
 ---
 

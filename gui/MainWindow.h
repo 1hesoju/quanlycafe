@@ -96,6 +96,18 @@ private:
     // --- Timer dong bo Order ---
     QTimer* timerSyncOrder;
 
+    // --- Tab Ket Ca & Doanh Thu (Admin & Thu Ngan) ---
+    QDateEdit* dateKetCa;
+    QTableWidget* tableKetCaNgay;
+    QLabel* lblTongDauCaNgay;
+    QLabel* lblTongThuNgay;
+    QLabel* lblTongCuoiNgay;
+    QDateEdit* dateDoanhThuThang;
+    QTableWidget* tableDoanhThuThang;
+    QLabel* lblTongThuThang;
+    QLabel* lblTongHDThang;
+
+
 
 public:
     MainWindow(QuanLyQuanCafe& cafeApp, QuanLyTaiKhoan& tkManager,
@@ -127,6 +139,12 @@ private:
     void refreshChiTietBan(int soBan);
     void refreshKDS();
     void refreshCanBung();
+
+    QWidget* createDoanhThuWidget();
+    void refreshTabDoanhThu();
+    void refreshBangKetCaNgay();
+    void refreshBangDoanhThuThang();
+
 
 
 private slots:
@@ -176,6 +194,13 @@ private slots:
 
     void onPhuVuDaBung(int soBan, const QString& maMon);
     void onTimerSyncOrder();
+
+    // Doanh thu & Ket ca slots
+    void onNgayKetCaChanged();
+    void onThangDoanhThuChanged();
+    void onNhapTienDauCa();
+    void onChotKetCa();
+
 
     // Hệ thống
     void onLuuDuLieu();

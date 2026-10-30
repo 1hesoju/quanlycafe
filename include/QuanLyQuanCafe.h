@@ -9,6 +9,7 @@
 #include "ChamCong.h"
 #include "BangLuong.h"
 #include "QuanLyOrder.h"
+#include "QuanLyDoanhThu.h"
 
 // Thông tin tổng hợp cho Dashboard (giống các "card" trên giao diện mẫu)
 struct ThongTinDashboard {
@@ -61,6 +62,7 @@ private:
     ChamCong chamCong;
     BangLuong bangLuong;
     QuanLyOrder qlOrder;
+    QuanLyDoanhThu qlDoanhThu;
 
     // unordered_map: tra cứu vị trí nhân viên theo mã trong O(1) thay vì duyệt vector
     std::unordered_map<std::string, size_t> chiSoNV;
@@ -104,6 +106,7 @@ public:
     std::vector<BanGhiLuong> bangLuongThang(const std::string& thangNam);
     BangLuong& layBangLuong();
     QuanLyOrder& layQuanLyOrder();
+    QuanLyDoanhThu& layQuanLyDoanhThu();
 
     // ---------- Dashboard & báo cáo ----------
     ThongTinDashboard layDashboard() const;

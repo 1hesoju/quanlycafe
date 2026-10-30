@@ -29,6 +29,7 @@ set(BACKEND_SOURCES
     src/MonAn.cpp
     src/BanAn.cpp
     src/QuanLyOrder.cpp
+    src/QuanLyDoanhThu.cpp
 )
 
 set(GUI_SOURCES
