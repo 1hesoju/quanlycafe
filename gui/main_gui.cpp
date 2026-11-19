@@ -3,13 +3,20 @@
 #include "TaiKhoan.h"
 #include "LoginDialog.h"
 #include "MainWindow.h"
+#ifdef _WIN32
 #include <direct.h>
+#define MKDIR(d) _mkdir(d)
+#else
+#include <sys/stat.h>
+#include <sys/types.h>
+#define MKDIR(d) mkdir(d, 0755)
+#endif
 
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
     std::string dataDir = "data";
-    _mkdir(dataDir.c_str());
+    MKDIR(dataDir.c_str());
 
     QuanLyQuanCafe cafeApp;
     cafeApp.taiTatCa(dataDir);
